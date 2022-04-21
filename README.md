@@ -29,3 +29,12 @@ yarn dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+
+
+# Acknowledgments
+
+* Terrain
+  * [Building a Vaporwave scene with Three.js](https://blog.maximeheckel.com/posts/vaporwave-3d-scene-with-threejs/).
+  * [Github](https://github.com/MaximeHeckel/linear-vaporwave-react-three-fiber)
+* Sun effect: https://codesandbox.io/s/vaporwave-sj7i6?file=/src/index.tsx
+* Art Car Design: https://github.com/titanicsend/LXStudio-TE

@@ -1,5 +1,5 @@
 module.exports = {
   reactStrictMode: true,
   experimental: { images: { layoutRaw: true } },
-  basePath: '/te-web',
+  basePath: process.env.BASE_PATH ? process.env.BASE_PATH : "",
 }
