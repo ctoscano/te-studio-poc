@@ -1,4 +1,5 @@
 import { Canvas, useFrame, useThree, extend } from "@react-three/fiber";
+import FPSStats from "react-fps-stats"
 import {
   PerspectiveCamera,
   OrbitControls,
@@ -16,6 +17,8 @@ import {
 } from "three-stdlib";
 import { MeshStandardMaterial } from "three";
 import CustomShaderMaterial from "three-custom-shader-material";
+
+import { teModel } from "../data/leds";
 
 const fragmentShader = `
 float aastep(in float threshold, in float value) {
@@ -186,6 +189,158 @@ const Light = () => {
     </>
   );
 };
+import * as THREE from "three"
+import { ShaderMaterial } from "three";
+import { SVGLoader as loader } from "three/examples/jsm/loaders/SVGLoader";
+
+function addSphere(scene, x, y, z) {
+  let geometry = new THREE.SphereGeometry( 5, 32, 32 );
+  let material = new THREE.MeshStandardMaterial({color: 0x0000ff, roughness: 0});
+  let sphere = new THREE.Mesh( geometry, material );
+  sphere.position.set(x, y, z);
+  // sphere.name = 'my-sphere';
+  scene.add( sphere );
+}
+
+function getSVG(url) {
+  return new Promise(resolve =>
+    new loader().load(url, shapes =>
+      resolve(
+        flatten(
+          shapes.paths.map((group, index) => {
+            return group.toShapes(true)
+          })
+        )
+      )
+    )
+  )
+}
+
+const COLORS = {
+  codGray: new THREE.Color(0x121212),
+  brightTurquoise: new THREE.Color(0x39f5e6),
+  wewak: new THREE.Color(0xffd8bb),
+  mandy: new THREE.Color(0xe84971),
+}
+
+function Shape() {
+  const [shapes, setShapes] = React.useState();
+  const groupRef = React.useRef();
+
+  React.useEffect(() => {
+    getSVG(
+      "https://raw.githubusercontent.com/willgriffiths/storage/master/vaporwave/onisun-1x1.svg"
+    ).then(payload => setShapes(payload))
+    groupRef.current.scale.multiply(new THREE.Vector3(5, -5, 1))
+    groupRef.current.translateOnAxis(new THREE.Vector3(-1, 1, 0), 2.5)
+  }, [])
+
+  return (
+    <group ref={groupRef}>
+      {shapes &&
+        shapes.map((shape, i) => (
+          <mesh key={i} material={sunMaterial}>
+            <shapeBufferGeometry attach="geometry" args={[shape]} />
+          </mesh>
+        ))}
+    </group>
+  )
+}
+export class SunHaloMaterial extends ShaderMaterial {
+  constructor(options) {
+    super({
+      vertexShader: `
+        varying vec2 vUv;
+    
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 color;
+      
+        varying vec2 vUv;
+
+        void main() {
+          float d = 0.0;
+          d = length( abs(vUv)-.5 );
+          gl_FragColor = vec4(color, smoothstep(0.1,.5,d)* smoothstep(.5,.3,d))*0.75;
+        }
+      `,
+      transparent: true,
+    })
+    this.uniforms = {
+      color: { value: options.color },
+    }
+  }
+}
+
+var sunHaloMaterial = new SunHaloMaterial({
+  color: COLORS.mandy,
+})
+
+function Sun() {
+  return (
+    <group position={[0, 4.5, 0]} scale={[1.15, 1.15, 1]}>
+      <mesh material={sunHaloMaterial} position={[0, 0, -0.001]}>
+        <ringBufferGeometry attach="geometry" args={[.1, 3.8, 36]} />
+      </mesh>
+      <Shape />
+    </group>
+  )
+}
+
+const normalScale = 1.5;
+const skipLeds = 10;
+const maxPerPanel = 3000;
+const maxPanels = 200;
+const ledSize = .004;
+const edgeLedSize = .009;
+
+const ledColor = new THREE.Color(0x39f5e6);
+
+function Panel(props) {
+  const { panel, ledSize, ledColor } = props;
+  
+  return panel.leds.map((ledPos, i) => {
+    // if (ledPos[0] > .4) { return; }
+    if (i > maxPerPanel) { return; }
+    if (skipLeds !== false && i % skipLeds != 0) { return; }
+    const x = ledPos[2]*normalScale * -1 + .7;
+    const y = ledPos[1]*normalScale;
+    const z = ledPos[0]*normalScale * -1 + 5;
+    return (<mesh key={i} position={[x, y, z]}>
+      <sphereGeometry attach="geometry" args={[ledSize, 3, 2]} />
+      {/* <boxGeometry attach="geometry" args={[ledSize, ledSize, ledSize]} /> */}
+      <meshBasicMaterial color={ledColor} />
+    </mesh>);
+  })
+}
+
+function Panels(props) {
+  const { selected } = props;
+  const primaryColor = new THREE.Color(selected.colors.primary);
+  const edgeColor = new THREE.Color(selected.colors.edge);
+  return (
+    <group position={[0, 0, 0]} scale={[0.15, 0.15, .08]}>
+
+      {teModel.panels.map((panel, i) => {
+        if (Object.keys(selected).length > 1 && !!!selected[panel.id]) {
+          return;
+        }
+        if (i > maxPanels) { return; }
+        return <Panel key={i} panel={panel} ledSize={ledSize} ledColor={primaryColor} />;
+      })}
+
+      {teModel.edges.map((edge, i) => {
+        if (i > maxPanels) { return; }
+        return <Panel key={i} panel={edge} ledSize={edgeLedSize} ledColor={edgeColor} />;
+      })}
+      
+    </group>
+  )
+}
 
 /**
  * This component renders the scene which renders all the components declared above and more:
@@ -204,7 +359,8 @@ const Light = () => {
  * device pixel ratio immediately when the scene appears the first time.
  *
  */
-const Scene = () => {
+const Scene = (props) => {
+  const { edit, selected } = props;
   const [mounted, setMounted] = React.useState(false);
 
   React.useEffect(() => {
@@ -213,7 +369,11 @@ const Scene = () => {
 
   return (
     <>
-      {!mounted ? null : (
+      {!mounted ? null : (<div>
+        {/* <Image className="hero-img" src="/full-logo.png" alt="titanicsend" width="2000" height="1500" layout="raw" /> */}
+        {/* <img className="hero-img" src="/te-web/full-logo.png" alt="titanicsend" /> */}
+        {!!!edit && <img className="hero-img" src="https://ctoscano.github.io/te-web/full-logo.png" alt="titanicsend" />}
+        {/* <h1 className="hero-title">Titanic's End</h1> */}
         <Canvas
           style={{
             position: "absolute",
@@ -230,7 +390,7 @@ const Scene = () => {
           <React.Suspense fallback={null}>
             <color attach="background" args={["#000000"]} />
             <fog attach="fog" args={["#000000", 1, 2.5]} />
-            <OrbitControls attach="orbitControls" />
+            {!!edit && <OrbitControls attach="orbitControls" />}
             <PerspectiveCamera
               makeDefault
               position={[0, 0.06, 1.1]}
@@ -238,21 +398,47 @@ const Scene = () => {
               near={0.01}
               far={20}
             />
-            <Light />
-            <Landscape />
-            <Effects />
+            {!!!edit && <Sun />}
+            {!!edit && <Panels selected={selected} />}
+            {!!!edit && <Light />}
+            {!!!edit && <Landscape />}
+            {!!!edit && <Effects />}
           </React.Suspense>
         </Canvas>
-      )}
+      </div>)}
     </>
   );
 };
 
+const Controls = (props) => {
+  const { selected, setSelected } = props;
+
+  const updateColor = (id, value) => {
+    setSelected({...selected, colors: { ...selected.colors, [id]: value } });
+  };
+  
+  return (
+  <div style={{color: "white"}}>
+    <input type="button" onClick={() => setSelected({ colors: selected.colors })} value="Clear" />
+    {teModel.panels.map((panel, i) => {
+      return (<label key={i}>
+        <input type="checkbox" checked={!!selected[panel.id]} onClick={() => setSelected({...selected, [panel.id]: !selected[panel.id]})} />{panel.id}</label>);
+    })}
+    <div>
+      Primary Color: <input value={selected.colors["primary"]} onChange={(e) => updateColor("primary", e.currentTarget.value)} />
+      Edge Color: <input value={selected.colors["edge"]} onChange={(e) => updateColor("edge", e.currentTarget.value)} />
+      <span>(ex. &quot;#e84971&quot; or &quot;rgb(30%, 50%, 8%)&quot; or &quot;rgb(255, 50, 80)&quot;)</span>
+    </div>
+  </div>);
+}
+
 export default function Home() {
+  const [edit, setEdit] = React.useState(false);
+  const [selected, setSelected] = React.useState({ colors: { primary: "#e84971", edge: "#39f5e6"} });
   return (
     <div>
       <Head>
-        <title>Linear - React-Three-Fiber</title>
+        <title>Titanic&apos;s End Lighting Studio</title>
         <meta
           name="description"
           content="A reversed-engineer versioned of the WebGL animation from the Linear 2021 release page. Recreated by @MaximeHeckel"
@@ -260,14 +446,13 @@ export default function Home() {
         <link rel="icon" href="/favicon.ico" />
       </Head>
       <main>
+        {!!edit && <FPSStats />}
         <div className="label-container">
-          <p className="label">
-            ⚡️ Originally inspired by the{" "}
-            <a href="https://linear.app/releases/2021-06">
-              2021 Linear release page
-            </a>
+          <p className="label" style={{ cursor: "pointer" }} onClick={() => setEdit(!!!edit)}>
+            Edit
           </p>
-          <p className="label">
+          {edit && <Controls selected={selected} setSelected={setSelected} />}
+          {/* <p className="label">
             ✨ Reverse-engineered and recreated by{" "}
             <a href="https://twitter.com/MaximeHeckel">@MaximeHeckel</a> with
             React-Three-Fiber
@@ -278,9 +463,9 @@ export default function Home() {
               Building a Vaporwave scene with Three.js
             </a>{" "}
             (Three.js only)
-          </p>
+          </p> */}
         </div>
-        <Scene />
+        <Scene edit={edit} selected={selected} />
       </main>
     </div>
   );
